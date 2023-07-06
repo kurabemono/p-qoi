@@ -108,7 +108,7 @@ def encode(height: int, width: int, channels: int, pixel_data):
                         "01"+f"{(dr):02b}{(dg):02b}{(db):02b}", 2)
                     print(hex(bin_data), bin(bin_data))
                     output.append(bin_data)
-                elif -32 <= diff.g < 32 and -8 <= diff.r - diff.g < 8 and -8 <= diff.b - diff.g < 8:
+                elif -32 <= diff.g < 32 and -8 <= diff.r - diff.g < 8 and -8 <= diff.b - diff.g < 8 and diff.a == 0:
                     print("luma diff is within bounds")
                     dg = diff.g + 32
                     dr_dg = diff.r - diff.g + 8
@@ -164,7 +164,7 @@ def write_qoi(filename, data):
 
 
 if __name__ == "__main__":
-    array = open_png("testfiles/bricks.png")
+    array = open_png("testfiles/exam.png")
     height, width, channels = array.shape
     curr_r, curr_g, curr_b, curr_a = array[0, 0]
 
