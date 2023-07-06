@@ -2,8 +2,9 @@
 Python script to encode an input PNG image to the QOI format
 """
 
+import argparse
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 
 class Pixel:
@@ -27,12 +28,6 @@ class Pixel:
         return Pixel(self.r - other.r, self.g - other.g, self.b - other.b, self.a - other.a)
 
 
-def open_png(filename):
-    with Image.open(filename) as im:
-        array = np.array(im)
-        return array
-
-
 def encode(height: int, width: int, channels: int, pixel_data):
     output = []  # byte array
 
@@ -51,8 +46,9 @@ def encode(height: int, width: int, channels: int, pixel_data):
     # initial encoder values
     prev = Pixel(0, 0, 0, 255)
     pix_array = [Pixel(0, 0, 0, 0) for _ in range(64)]
-    runLength = 0
+    run_length = 0
 
+    # process image
     for h in range(height):
         for w in range(width):
             curr = Pixel(pixel_data[h, w, 0],  # r
@@ -63,98 +59,77 @@ def encode(height: int, width: int, channels: int, pixel_data):
             index_position = (curr.r * 3 + curr.g * 5 +
                               curr.b * 7 + curr.a * 11) % 64
 
-            # print("prev:", prev)
-            # print("curr:", curr)
-
             # check if max length of runlength is reached
-            if runLength == 62:
-                print("max length of runLength reached")
-                bin_data = int("11" + f"{(runLength - 1):06b}", 2)
-                print(hex(bin_data), bin(bin_data))
+            if run_length == 62:
+                bin_data = int("11" + f"{(run_length - 1):06b}", 2)
                 output.append(bin_data)
-                runLength = 0
+                run_length = 0
 
             # check for RLE
             if curr == prev:
                 # increment runLength and continue processing
-                # print("curr == prev")
-                runLength += 1
+                run_length += 1
                 continue  # we can safely skip updating prev and pix_array
             else:
-                if runLength > 0:
-                    print("run length streak broken")
+                if run_length > 0:
                     # write out current runLength to output and zero it out
-                    bin_data = int("11" + f"{(runLength - 1):06b}", 2)
-                    print(hex(bin_data), bin(bin_data))
+                    bin_data = int("11" + f"{(run_length - 1):06b}", 2)
                     output.append(bin_data)
-                    runLength = 0
+                    run_length = 0
 
             # check for index
             if curr == pix_array[index_position]:
-                print("curr matches item at pix_array at index:", index_position)
                 bin_data = int("00" + f"{index_position:06b}", 2)
-                print(hex(bin_data), bin(bin_data))
                 output.append(bin_data)
             else:
                 # check for diff or luma diff
                 diff = curr - prev
-                # print("diff:", diff)
                 if -2 <= diff.r < 2 and -2 <= diff.g < 2 and -2 <= diff.b < 2 and diff.a == 0:
-                    print("rgb diff is within 2 bits and a is equal")
                     dr = diff.r + 2
                     dg = diff.g + 2
                     db = diff.b + 2
                     bin_data = int(
                         "01"+f"{(dr):02b}{(dg):02b}{(db):02b}", 2)
-                    print(hex(bin_data), bin(bin_data))
                     output.append(bin_data)
                 elif -32 <= diff.g < 32 and -8 <= diff.r - diff.g < 8 and -8 <= diff.b - diff.g < 8 and diff.a == 0:
-                    print("luma diff is within bounds")
                     dg = diff.g + 32
                     dr_dg = diff.r - diff.g + 8
                     db_dg = diff.b - diff.g + 8
                     bin_data = int("10"+f"{dg:06b}", 2)
-                    print(hex(bin_data), bin(bin_data))
                     output.append(bin_data)
                     bin_data = int(f"{dr_dg:04b}{db_dg:04b}", 2)
-                    print(hex(bin_data), bin(bin_data))
                     output.append(bin_data)
                 else:
                     if curr.a == prev.a:
-                        print("passthrough RGB")
                         bin_data = int("11111110", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.r:08b}", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.g:08b}", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.b:08b}", 2)
-                        print(hex(bin_data), bin(bin_data))
                         output.append(bin_data)
 
                     else:
-                        print("passthrough RGBA")
                         bin_data = int("11111111", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.r:08b}", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.g:08b}", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.b:08b}", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
                         bin_data = int(f"{curr.a:08b}", 2)
-                        print(hex(bin_data), bin(bin_data), end=None)
                         output.append(bin_data)
 
             prev = curr
             pix_array[index_position] = Pixel.fromPixel(curr)
+
+    # check if there is unwritten run length data
+    if run_length > 0:
+        bin_data = int("11" + f"{(run_length - 1):06b}", 2)
+        output.append(bin_data)
+        run_length = 0
     return bytes(output)
 
 
@@ -163,16 +138,45 @@ def write_qoi(filename, data):
         outfile.write(data)
 
 
-if __name__ == "__main__":
-    array = open_png("testfiles/exam.png")
+def replace_extension(path: str, extension: str):
+    old_extension = path.split(".")[-1]
+    new_path = path.replace("." + old_extension, "." + extension)
+    return new_path
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Encode an image to the QOI format.")
+    parser.add_argument("filename")
+    parser.add_argument(
+        "-o", "--output", help="output file name (default: <input_file>.qoi)")
+    args = parser.parse_args()
+
+    try:
+        im = Image.open(args.filename)
+    except FileNotFoundError:
+        print(f"Failed to load {args.filename}: file not found.")
+        return
+    except UnidentifiedImageError:
+        print(f"Failed to load {args.filename}: unrecognized format.")
+        return
+
+    array = np.array(im)
     height, width, channels = array.shape
-    curr_r, curr_g, curr_b, curr_a = array[0, 0]
 
     # print(np.zeros((64, 4), dtype="uint8")[63])
 
-    output = encode(height, width, channels, array)
-    print(output)
-    write_qoi("testfiles/output.qoi", output)
+    output_data = encode(height, width, channels, array)
+    # print(output_data)
+
+    outfile = replace_extension(
+        args.filename, "qoi") if not args.output else args.output
+
+    write_qoi(outfile, output_data)
 
     # rand_image = np.random.randint(low=0, high=255, size=(128, 128, 4))
     # print(rand_image)
+
+
+if __name__ == "__main__":
+    main()
